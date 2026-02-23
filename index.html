@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>業務用メモ帳</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        /* === 共通スタイル === */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f5f7; color: #333; }
+        .hidden { display: none !important; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        button { cursor: pointer; padding: 8px 16px; border: none; border-radius: 4px; background-color: #0056b3; color: white; font-size: 14px; }
+        button:hover { background-color: #004494; }
+        button.danger { background-color: #dc3545; }
+        button.danger:hover { background-color: #c82333; }
+        input, textarea, select { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        
+        /* === カモフラージュモード === */
+        #camouflage-mode { background-color: #fff; height: 100vh; padding: 20px; box-sizing: border-box; }
+        #trigger-title { font-size: 20px; font-weight: normal; color: #555; user-select: none; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        #camo-textarea { width: 100%; height: calc(100vh - 80px); border: none; outline: none; resize: none; font-size: 14px; }
+
+        /* === 証拠収集モード === */
+        #shield-mode { background-color: #f4f5f7; min-height: 100vh; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px; overflow-x: auto; }
+        .tab-btn { background-color: #e0e0e0; color: #333; }
+        .tab-btn.active { background-color: #333; color: #fff; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .record-item, .diary-item { border-bottom: 1px solid #eee; padding: 10px 0; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; color: white; }
+        .badge-structure { background-color: #fd7e14; }
+        .badge-personal { background-color: #6c757d; }
+        .badge-harassment { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+
+    <div id="camouflage-mode">
+        <h1 id="trigger-title">業務メモ</h1>
+        <textarea id="camo-textarea" placeholder="ここにメモを入力..."></textarea>
+    </div>
+
+    <div id="shield-mode" class="container hidden">
+        <div class="header">
+            <h2>🛡️ 心の盾 (Local Edition)</h2>
+            <button onclick="toggleMode()">📝 カモフラージュに戻る</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('record')">🎙️ ステルス録音</button>
+            <button class="tab-btn" onclick="switchTab('diary')">📓 証拠日記</button>
+            <button class="tab-btn" onclick="switchTab('template')">📄 切り返しテンプレ</button>
+            <button class="tab-btn" onclick="switchTab('export')">📦 エクスポート</button>
+        </div>
+
+        <div id="tab-record" class="tab-content">
+            <div class="card">
+                <h3>録音コントロール</h3>
+                <p>※ブラウザのマイク許可が必要です。録音中はタブを閉じないでください。</p>
+                <button id="btn-start-record" class="danger" onclick="startRecording()">🔴 録音開始</button>
+                <button id="btn-stop-record" class="hidden" onclick="stopRecording()">⏹️ 録音停止</button>
+                <span id="recording-status" style="margin-left: 10px; color: red; font-weight: bold;" class="hidden">録音中...</span>
+            </div>
+            <div class="card">
+                <h3>保存された録音</h3>
+                <div id="record-list"></div>
+            </div>
+        </div>
+
+        <div id="tab-diary" class="tab-content hidden">
+            <div class="card">
+                <h3>新規記録</h3>
+                <label>発生日時:</label>
+                <input type="datetime-local" id="diary-date">
+                
+                <label>加害者の発言・行動:</label>
+                <textarea id="diary-content" rows="3" placeholder="「お前が使えないから仕事が回らないんだ」等"></textarea>
+                
+                <label>自己分析（論理すり替え防止）:</label>
+                <select id="diary-analysis">
+                    <option value="structure">構造的問題（人員・予算不足、業務フローの欠陥）</option>
+                    <option value="harassment">純粋なハラスメント（人格否定、暴言）</option>
+                    <option value="personal">個人の問題（純粋な自分のミス ※過度に責めないこと）</option>
+                </select>
+
+                <label>客観的な事実・反証メモ:</label>
+                <textarea id="diary-fact" rows="3" placeholder="人員が前年比マイナス1名。マニュアルも未整備のまま業務を振られた。等"></textarea>
+                
+                <button onclick="saveDiary()">💾 保存</button>
+            </div>
+            <div class="card">
+                <h3>日記一覧</h3>
+                <div id="diary-list"></div>
+            </div>
+        </div>
+
+        <div id="tab-template" class="tab-content hidden">
+            <div class="card">
+                <h3>法的な「切り返し」カンニングペーパー</h3>
+                <p>人事院指針（パワー・ハラスメントの防止等）に基づく、角を立てずに身を守るフレーズ集です。</p>
+                <ul>
+                    <li><strong>理不尽な叱責に対して：</strong><br>「ご指導ありがとうございます。今後の改善のため、今の具体的なご指摘内容をメールでいただけますでしょうか。」</li>
+                    <li><strong>人格を否定する暴言に対して：</strong><br>「申し訳ありませんが、今の発言は人事院規則10-16に抵触する恐れがあると感じました。自分の身を守るため、メモを取らせていただいてもよろしいでしょうか。」</li>
+                    <li><strong>個人のキャパを超える業務の押し付け：</strong><br>「現在の業務量（◯◯と△△）を抱えており、これ以上はお引き受けすると組織にご迷惑をかける可能性があります。優先順位について上長を交えてご相談させてください。」</li>
+                    <li><strong>「お前が無能だから」等、構造的問題を個人に転嫁された時（心の中で唱える用）：</strong><br>「これは私の能力不足ではなく、組織の人員配置とマネジメントの欠陥である。（原因の分離）」</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="tab-export" class="tab-content hidden">
+            <div class="card">
+                <h3>証拠の一括抽出</h3>
+                <p>保存されたすべての日記と音声データを一つのZIPファイルにまとめてダウンロードします。</p>
+                <p><strong>※外部サーバーへの送信は一切行われません。すべてこの端末内で処理されます。</strong></p>
+                <button onclick="exportData()">📦 すべての証拠をZIPでダウンロード</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. カモフラージュUI（3回タップ判定） ---
+        let tapCount = 0;
+        let tapTimer = null;
+        
+        document.getElementById('trigger-title').addEventListener('click', () => {
+            tapCount++;
+            clearTimeout(tapTimer);
+            if(tapCount >= 3) {
+                toggleMode();
+                tapCount = 0;
+            } else {
+                tapTimer = setTimeout(() => { tapCount = 0; }, 1000); // 1秒以内に3回
+            }
+        });
+
+        function toggleMode() {
+            const camo = document.getElementById('camouflage-mode');
+            const shield = document.getElementById('shield-mode');
+            if (camo.classList.contains('hidden')) {
+                camo.classList.remove('hidden');
+                shield.classList.add('hidden');
+                document.title = "業務用メモ帳";
+            } else {
+                camo.classList.add('hidden');
+                shield.classList.remove('hidden');
+                document.title = "🛡️ 心の盾";
+                loadRecords();
+                loadDiaries();
+            }
+        }
+
+        // --- タブ切り替え ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            event.target.classList.add('active');
+        }
+
+        // --- 2. ステルス録音 (MediaRecorder + LocalForage) ---
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const timestamp = new Date().toISOString();
+                    await localforage.setItem(`audio_${timestamp}`, audioBlob);
+                    audioChunks = [];
+                    loadRecords();
+                    alert("録音を保存しました。");
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                document.getElementById('btn-start-record').classList.add('hidden');
+                document.getElementById('btn-stop-record').classList.remove('hidden');
+                document.getElementById('recording-status').classList.remove('hidden');
+
+                // 録音開始したらすぐカモフラージュに戻る（ステルス性）
+                toggleMode();
+
+            } catch (err) {
+                alert("マイクへのアクセスが拒否されたか、エラーが発生しました。\n" + err);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop()); // マイク解放
+                isRecording = false;
+                document.getElementById('btn-start-record').classList.remove('hidden');
+                document.getElementById('btn-stop-record').classList.add('hidden');
+                document.getElementById('recording-status').classList.add('hidden');
+            }
+        }
+
+        async function loadRecords() {
+            const listEl = document.getElementById('record-list');
+            listEl.innerHTML = '';
+            const keys = await localforage.keys();
+            const audioKeys = keys.filter(k => k.startsWith('audio_')).sort().reverse();
+            
+            if(audioKeys.length === 0) listEl.innerHTML = '<p>録音データはありません。</p>';
+
+            for (const key of audioKeys) {
+                const blob = await localforage.getItem(key);
+                const url = URL.createObjectURL(blob);
+                const dateStr = new Date(key.replace('audio_', '')).toLocaleString('ja-JP');
+                
+                const div = document.createElement('div');
+                div.className = 'record-item';
+                div.innerHTML = `
+                    <strong>${dateStr}</strong><br>
+                    <audio controls src="${url}" style="height: 30px; margin-top: 5px;"></audio>
+                    <button class="danger" style="padding: 4px 8px; font-size: 12px; float: right;" onclick="deleteItem('${key}')">削除</button>
+                    <div style="clear:both;"></div>
+                `;
+                listEl.appendChild(div);
+            }
+        }
+
+        // --- 3. 論理すり替え防止日記 ---
+        async function saveDiary() {
+            const date = document.getElementById('diary-date').value || new Date().toISOString();
+            const content = document.getElementById('diary-content').value;
+            const analysis = document.getElementById('diary-analysis').value;
+            const fact = document.getElementById('diary-fact').value;
+
+            if(!content) return alert("発言・行動を入力してください。");
+
+            const diaryEntry = { date, content, analysis, fact };
+            await localforage.setItem(`diary_${new Date().getTime()}`, diaryEntry);
+            
+            document.getElementById('diary-content').value = '';
+            document.getElementById('diary-fact').value = '';
+            loadDiaries();
+            alert("日記を保存しました。");
+        }
+
+        async function loadDiaries() {
+            const listEl = document.getElementById('diary-list');
+            listEl.innerHTML = '';
+            const keys = await localforage.keys();
+            const diaryKeys = keys.filter(k => k.startsWith('diary_')).sort().reverse();
+
+            if(diaryKeys.length === 0) listEl.innerHTML = '<p>日記データはありません。</p>';
+
+            const analysisMap = {
+                'structure': { label: '構造的問題', class: 'badge-structure' },
+                'harassment': { label: 'ハラスメント', class: 'badge-harassment' },
+                'personal': { label: '個人の問題', class: 'badge-personal' }
+            };
+
+            for (const key of diaryKeys) {
+                const entry = await localforage.getItem(key);
+                const dateStr = new Date(entry.date).toLocaleString('ja-JP');
+                const badge = analysisMap[entry.analysis];
+                
+                const div = document.createElement('div');
+                div.className = 'diary-item';
+                div.innerHTML = `
+                    <div><strong>${dateStr}</strong> <span class="badge ${badge.class}">${badge.label}</span></div>
+                    <p style="margin: 5px 0;"><strong>発言・行動:</strong> ${entry.content}</p>
+                    <p style="margin: 5px 0; color: #555;"><strong>反証・事実:</strong> ${entry.fact}</p>
+                    <button class="danger" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${key}')">削除</button>
+                `;
+                listEl.appendChild(div);
+            }
+        }
+
+        async function deleteItem(key) {
+            if(confirm("本当に削除しますか？")) {
+                await localforage.removeItem(key);
+                loadRecords();
+                loadDiaries();
+            }
+        }
+
+        // --- 4. 証拠エクスポート (JSZip) ---
+        async function exportData() {
+            const zip = new JSZip();
+            const keys = await localforage.keys();
+            
+            // 日記データの集約
+            const diaryKeys = keys.filter(k => k.startsWith('diary_')).sort();
+            let diaryText = "=== 証拠日記 ===\n\n";
+            for (const key of diaryKeys) {
+                const entry = await localforage.getItem(key);
+                diaryText += `日時: ${new Date(entry.date).toLocaleString('ja-JP')}\n`;
+                diaryText += `分析: ${entry.analysis}\n`;
+                diaryText += `発言: ${entry.content}\n`;
+                diaryText += `反証: ${entry.fact}\n`;
+                diaryText += `------------------------\n`;
+            }
+            zip.file("evidence_diary.txt", diaryText);
+
+            // 音声データの追加
+            const audioKeys = keys.filter(k => k.startsWith('audio_'));
+            for (const key of audioKeys) {
+                const blob = await localforage.getItem(key);
+                const dateStr = key.replace('audio_', '').replace(/[:.]/g, '-');
+                zip.file(`audio_${dateStr}.webm`, blob);
+            }
+
+            // ZIP生成とダウンロード
+            zip.generateAsync({type:"blob"}).then(function(content) {
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(content);
+                a.download = `kokoro_no_tate_evidence_${new Date().getTime()}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+        }
+
+        // 初期化：日付フィールドに現在時刻をセット
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('diary-date').value = now.toISOString().slice(0,16);
+
+    </script>
+</body>
+</html>
