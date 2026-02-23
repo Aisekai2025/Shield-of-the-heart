@@ -26,14 +26,16 @@
         #shield-mode { background-color: #f4f5f7; min-height: 100vh; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px; overflow-x: auto; }
-        .tab-btn { background-color: #e0e0e0; color: #333; }
+        .tab-btn { background-color: #e0e0e0; color: #333; white-space: nowrap; }
         .tab-btn.active { background-color: #333; color: #fff; }
-        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; line-height: 1.6; }
         .record-item, .diary-item { border-bottom: 1px solid #eee; padding: 10px 0; }
         .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; color: white; }
         .badge-structure { background-color: #fd7e14; }
         .badge-personal { background-color: #6c757d; }
         .badge-harassment { background-color: #dc3545; }
+        .warning-text { color: #dc3545; font-weight: bold; }
+        h4 { margin-bottom: 5px; color: #0056b3; border-left: 4px solid #0056b3; padding-left: 8px; }
     </style>
 </head>
 <body>
@@ -54,7 +56,7 @@
             <button class="tab-btn" onclick="switchTab('diary')">📓 証拠日記</button>
             <button class="tab-btn" onclick="switchTab('template')">📄 切り返しテンプレ</button>
             <button class="tab-btn" onclick="switchTab('export')">📦 エクスポート</button>
-        </div>
+            <button class="tab-btn" onclick="switchTab('notes')">⚠️ 注意事項</button> </div>
 
         <div id="tab-record" class="tab-content">
             <div class="card">
@@ -118,6 +120,35 @@
                 <button onclick="exportData()">📦 すべての証拠をZIPでダウンロード</button>
             </div>
         </div>
+
+        <div id="tab-notes" class="tab-content hidden">
+            <div class="card">
+                <h3>重要な注意事項</h3>
+                <p>本アプリをご利用になる前に、必ず以下の注意事項をお読みください。</p>
+
+                <h4>1. 法的地位に関する免責</h4>
+                <p><span class="warning-text">【重要：法的アドバイスではありません】</span><br>
+                本アプリはハラスメントの証拠収集を技術的に支援するツールであり、特定の言動が法的にハラスメントに該当するかどうかを確定させるものではありません。個別の事案の法的判断については、必ず法テラス、弁護士、または人事院・人事委員会等の専門機関にご相談ください。</p>
+
+                <h4>2. 守秘義務（国家公務員法・地方公務員法）への配慮</h4>
+                <p><span class="warning-text">【守秘義務に関するご注意】</span><br>
+                録音や日記を記録する際、業務上の機密情報（個人情報、未公表の行政情報等）が含まれないよう十分にご注意ください。証拠として外部（弁護士や相談窓口）へ提出する際は、機密部分を伏せる（マスキングする）などの適切な処置を行ってください。「身を守るための録音」は判例上正当化されやすいですが、機密情報の漏洩は別途不利益を招く恐れがあります。</p>
+
+                <h4>3. データの管理と消失リスク</h4>
+                <p><span class="warning-text">【データ保存に関するご注意】</span><br>
+                本アプリはプライバシー保護のため、外部サーバーにデータを送信せず、お使いのブラウザのローカル領域（IndexedDB）にのみ保存します。<br>
+                <strong>ブラウザのキャッシュ消去や履歴削除を行うと、保存されたデータも消去されます。</strong><br>
+                端末の故障や紛失に備え、定期的に「エクスポート」機能を利用して、外部ストレージ（USBメモリ等）にバックアップを取ってください。</p>
+
+                <h4>4. 秘密録音の正当性とマナー</h4>
+                <p><span class="warning-text">【録音の取扱いについて】</span><br>
+                相手に無断で録音すること（秘密録音）自体は、ハラスメント被害の証拠収集という正当な目的がある場合、直ちに違法とはならず、裁判等でも証拠として認められる傾向にあります。ただし、集めたデータをSNS等で公開する行為は、名誉毀損やプライバシー侵害に問われるリスクがあるため、厳に慎んでください。</p>
+
+                <h4>5. 動作環境の確認</h4>
+                <p><span class="warning-text">【動作環境について】</span><br>
+                お使いのブラウザやOSのバージョン、省電力設定等により、バックグラウンドでの録音が停止する場合があります。事前にご自身でテスト録音を行い、正しく動作することを確認した上でご使用ください。</p>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -132,7 +163,7 @@
                 toggleMode();
                 tapCount = 0;
             } else {
-                tapTimer = setTimeout(() => { tapCount = 0; }, 1000); // 1秒以内に3回
+                tapTimer = setTimeout(() => { tapCount = 0; }, 1000);
             }
         });
 
@@ -160,7 +191,7 @@
             event.target.classList.add('active');
         }
 
-        // --- 2. ステルス録音 (MediaRecorder + LocalForage) ---
+        // --- 2. ステルス録音 ---
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
@@ -189,7 +220,6 @@
                 document.getElementById('btn-stop-record').classList.remove('hidden');
                 document.getElementById('recording-status').classList.remove('hidden');
 
-                // 録音開始したらすぐカモフラージュに戻る（ステルス性）
                 toggleMode();
 
             } catch (err) {
@@ -200,7 +230,7 @@
         function stopRecording() {
             if (mediaRecorder && isRecording) {
                 mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop()); // マイク解放
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
                 isRecording = false;
                 document.getElementById('btn-start-record').classList.remove('hidden');
                 document.getElementById('btn-stop-record').classList.add('hidden');
@@ -335,3 +365,4 @@
     </script>
 </body>
 </html>
+
